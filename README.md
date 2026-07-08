@@ -48,7 +48,6 @@ The repository ships with a GitHub Actions workflow at `.github/workflows/deploy
 | `←` / `→` | Cycle worlds |
 | `H` | Show / hide interface |
 | `M` | Toggle microphone |
-| `F` | Fullscreen |
 
 ## Project Layout
 

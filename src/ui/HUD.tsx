@@ -31,10 +31,6 @@ export function HUD() {
       if (e.key === 'h' || e.key === 'H') toggleHud();
       if (e.key === 'ArrowRight' || e.key === 'l') cycleScene(1);
       if (e.key === 'ArrowLeft' || e.key === 'j') cycleScene(-1);
-      if (e.key === 'f' || e.key === 'F') {
-        if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
-        else document.exitFullscreen?.();
-      }
       if (e.key === 'm' || e.key === 'M') {
         void requestMic();
       }
