@@ -31,6 +31,7 @@ export function useAudioPublisher() {
         tempo: f.tempo,
         onset: f.onset,
         mood: f.mood,
+        silent: f.silent,
       });
       raf.current = requestAnimationFrame(loop);
     };

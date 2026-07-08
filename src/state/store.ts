@@ -28,58 +28,130 @@ export const SCENES: { id: SceneId; name: string; hint: string }[] = [
   { id: 'aurora',   name: 'Aurora',    hint: 'Cinematic atmospheric field' },
 ];
 
+export type ChapterId = 'awakening' | 'ignition' | 'ascent' | 'bloom' | 'cosmos' | 'return';
+
+export type Chapter = {
+  id: ChapterId;
+  name: string;
+  tag: string;
+  // target presence per scene (0..1). Journey Director will lerp toward these.
+  presence: Record<SceneId, number>;
+  // camera "vibe" — used by CameraRig
+  cameraMode: 'orbit' | 'rise' | 'sweep' | 'dive' | 'drift' | 'return';
+  // suggested palette bias (optional). If null, keep user palette.
+  paletteHint?: string | null;
+  duration: number; // seconds
+};
+
+// The journey arc — six movements that layer worlds instead of switching them.
+export const JOURNEY: Chapter[] = [
+  { id: 'awakening', name: 'Awakening', tag: 'First light',
+    presence: { nebula: 1.0, ribbons: 0.0, fractal: 0.0, hologrid: 0.0, aurora: 0.15 },
+    cameraMode: 'drift', paletteHint: 'oceanic', duration: 45 },
+  { id: 'ignition',  name: 'Ignition', tag: 'Something stirs',
+    presence: { nebula: 0.75, ribbons: 0.9, fractal: 0.0, hologrid: 0.15, aurora: 0.2 },
+    cameraMode: 'orbit', paletteHint: 'aurora', duration: 55 },
+  { id: 'ascent',    name: 'Ascent', tag: 'Rising signal',
+    presence: { nebula: 0.35, ribbons: 1.0, fractal: 0.0, hologrid: 0.7, aurora: 0.35 },
+    cameraMode: 'rise', paletteHint: 'plasma', duration: 60 },
+  { id: 'bloom',     name: 'Bloom', tag: 'Everything opens',
+    presence: { nebula: 0.55, ribbons: 0.55, fractal: 0.0, hologrid: 0.85, aurora: 1.0 },
+    cameraMode: 'sweep', paletteHint: 'verdant', duration: 65 },
+  { id: 'cosmos',    name: 'Cosmos', tag: 'Deeper structure',
+    presence: { nebula: 0.6, ribbons: 0.15, fractal: 1.0, hologrid: 0.15, aurora: 0.25 },
+    cameraMode: 'dive', paletteHint: 'plasma', duration: 70 },
+  { id: 'return',    name: 'Return', tag: 'Homeward',
+    presence: { nebula: 1.0, ribbons: 0.25, fractal: 0.25, hologrid: 0.0, aurora: 0.5 },
+    cameraMode: 'return', paletteHint: 'aurora', duration: 55 },
+];
+
 type State = {
+  // Journey
+  journeyMode: boolean;       // when true, presence + palette + camera are auto-driven
+  chapterIndex: number;
+  chapterProgress: number;    // 0..1 through current chapter
+  presence: Record<SceneId, number>; // smoothed live values scenes should read
+
+  // User-overrideable "manual scene" for when journeyMode is false
   scene: SceneId;
+
+  // Palette + composition
   paletteId: string;
-  intensity: number;   // 0..1
-  density: number;     // 0..1
-  cameraMotion: number;// 0..1
-  bloom: number;       // 0..1
-  audioSensitivity: number; // 0..2
+  intensity: number;
+  density: number;
+  cameraMotion: number;
+  bloom: number;
+  audioSensitivity: number;
+
+  // Audio source
   useMic: boolean;
+  useTab: boolean;
   usingAudio: boolean;
+  audioSourceLabel: string;
+
+  // UI
   hudVisible: boolean;
   reducedMotion: boolean;
   performanceMode: 'auto' | 'high' | 'balanced' | 'low';
   fps: number;
+
+  // Live audio features
   audio: {
     level: number;
     bass: number;
     mid: number;
     treble: number;
     energy: number;
-    beat: number;   // 0..1 impulse
-    tempo: number;  // 0..1 running tempo estimator
+    beat: number;
+    tempo: number;
     onset: boolean;
-    mood: number;   // 0..1 (low = calm, high = intense)
+    mood: number;
+    silent: boolean; // true when the source is present but quiet
   };
+
+  // Setters
   setScene: (s: SceneId) => void;
   setPalette: (id: string) => void;
   set: <K extends keyof State>(key: K, value: State[K]) => void;
   toggleHud: () => void;
   setAudio: (a: Partial<State['audio']>) => void;
   cycleScene: (dir: 1 | -1) => void;
+  jumpChapter: (dir: 1 | -1) => void;
+  setPresence: (p: Record<SceneId, number>) => void;
+};
+
+const zeroPresence: Record<SceneId, number> = {
+  nebula: 1, ribbons: 0, fractal: 0, hologrid: 0, aurora: 0.15,
 };
 
 export const useStore = create<State>((set, get) => ({
+  journeyMode: true,
+  chapterIndex: 0,
+  chapterProgress: 0,
+  presence: { ...zeroPresence },
+
   scene: 'nebula',
   paletteId: 'aurora',
-  intensity: 0.6,
-  density: 0.5,
-  cameraMotion: 0.55,
-  bloom: 0.55,
+  intensity: 0.7,
+  density: 0.55,
+  cameraMotion: 0.6,
+  bloom: 0.6,
   audioSensitivity: 1.0,
+
   useMic: false,
+  useTab: false,
   usingAudio: false,
+  audioSourceLabel: 'Ambient',
+
   hudVisible: true,
   reducedMotion: false,
   performanceMode: 'auto',
   fps: 60,
   audio: {
     level: 0, bass: 0, mid: 0, treble: 0, energy: 0,
-    beat: 0, tempo: 0, onset: false, mood: 0.4,
+    beat: 0, tempo: 0, onset: false, mood: 0.4, silent: false,
   },
-  setScene: (s) => set({ scene: s }),
+  setScene: (s) => set({ scene: s, journeyMode: false }),
   setPalette: (id) => set({ paletteId: id }),
   set: (key, value) => set({ [key]: value } as any),
   toggleHud: () => set((s) => ({ hudVisible: !s.hudVisible })),
@@ -88,8 +160,14 @@ export const useStore = create<State>((set, get) => ({
     const ids = SCENES.map((x) => x.id);
     const i = ids.indexOf(get().scene);
     const next = ids[(i + dir + ids.length) % ids.length];
-    set({ scene: next });
+    set({ scene: next, journeyMode: false });
   },
+  jumpChapter: (dir) => {
+    const n = JOURNEY.length;
+    const i = (get().chapterIndex + dir + n) % n;
+    set({ chapterIndex: i, chapterProgress: 0, journeyMode: true });
+  },
+  setPresence: (p) => set({ presence: p }),
 }));
 
 export function getPalette(id: string): Palette {

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useStore } from '@/state/store';
-import { usePaletteColors } from '../hooks';
+import { usePaletteColors, useScenePresence } from '../hooks';
 
 /**
  * HologridScene
@@ -17,6 +17,7 @@ export function HologridScene() {
   const cameraMotion = useStore((s) => s.cameraMotion);
   const density = useStore((s) => s.density);
   const palette = usePaletteColors();
+  const presence = useScenePresence('hologrid');
 
   const groundMat = useMemo(() => new THREE.ShaderMaterial({
     transparent: true,
@@ -27,6 +28,7 @@ export function HologridScene() {
       uBass: { value: 0 },
       uEnergy: { value: 0 },
       uBeat: { value: 0 },
+      uPresence: { value: 0 },
       uIntensity: { value: 1 },
       uBase: { value: new THREE.Color() },
       uAccent: { value: new THREE.Color() },
@@ -39,7 +41,7 @@ export function HologridScene() {
     fragmentShader: /* glsl */`
       precision highp float;
       varying vec2 vUv;
-      uniform float uTime, uBass, uEnergy, uBeat, uIntensity;
+      uniform float uTime, uBass, uEnergy, uBeat, uIntensity, uPresence;
       uniform vec3 uBase, uAccent, uGlow;
       float grid(vec2 uv, float scale){
         vec2 g = abs(fract(uv * scale) - 0.5);
@@ -66,7 +68,7 @@ export function HologridScene() {
         // horizon glow band
         float band = smoothstep(0.02, 0.0, abs(yy - 0.5)) * 0.6;
         vec3 outC = c * (0.9 + uEnergy * 0.9) * uIntensity + uGlow * band * 0.7 * uIntensity;
-        gl_FragColor = vec4(outC, clamp(a + band * 0.7, 0.0, 1.0));
+        gl_FragColor = vec4(outC, clamp(a + band * 0.7, 0.0, 1.0) * uPresence);
       }
     `,
   }), []);
@@ -82,6 +84,7 @@ export function HologridScene() {
       uTreble: { value: 0 },
       uEnergy: { value: 0 },
       uBeat: { value: 0 },
+      uPresence: { value: 0 },
       uIntensity: { value: 1 },
       uBase: { value: new THREE.Color() },
       uAccent: { value: new THREE.Color() },
@@ -94,7 +97,7 @@ export function HologridScene() {
     fragmentShader: /* glsl */`
       precision highp float;
       varying vec2 vUv;
-      uniform float uTime, uBass, uTreble, uEnergy, uBeat, uIntensity;
+      uniform float uTime, uBass, uTreble, uEnergy, uBeat, uIntensity, uPresence;
       uniform vec3 uBase, uAccent, uGlow;
       void main(){
         float ring = smoothstep(0.02, 0.0, abs(vUv.y - 0.5));
@@ -103,7 +106,7 @@ export function HologridScene() {
         vec3 c = mix(uBase, uAccent, pulse);
         c = mix(c, uGlow, uTreble);
         float a = ring * (0.25 + glow * 0.55) * (0.5 + uBass * 0.9 + uBeat * 0.7);
-        gl_FragColor = vec4(c * (0.65 + uBeat * 0.9) * uIntensity, a * 0.9);
+        gl_FragColor = vec4(c * (0.65 + uBeat * 0.9) * uIntensity, a * 0.9 * uPresence);
       }
     `,
   }), []);
@@ -126,15 +129,17 @@ export function HologridScene() {
       m.uniforms.uBass.value = audio.bass;
       m.uniforms.uEnergy.value = audio.energy;
       m.uniforms.uBeat.value = audio.beat;
+      m.uniforms.uPresence.value = presence;
       m.uniforms.uIntensity.value = 0.4 + intensity * 0.7;
-      m.uniforms.uBase.value.copy(palette.base);
-      m.uniforms.uAccent.value.copy(palette.accent);
-      m.uniforms.uGlow.value.copy(palette.glow);
+      (m.uniforms.uBase.value as THREE.Color).lerp(palette.base, 0.06);
+      (m.uniforms.uAccent.value as THREE.Color).lerp(palette.accent, 0.06);
+      (m.uniforms.uGlow.value as THREE.Color).lerp(palette.glow, 0.06);
     }
     (ringMat.uniforms.uTreble.value as number) = audio.treble;
     if (g.current) {
       const cam = 0.3 + cameraMotion * 1.2;
       g.current.rotation.y += dt * 0.03 * cam;
+      g.current.visible = presence > 0.02;
     }
   });
 

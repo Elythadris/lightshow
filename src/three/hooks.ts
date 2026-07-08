@@ -1,8 +1,13 @@
 'use client';
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { useStore, getPalette } from '@/state/store';
+import { useStore, getPalette, type SceneId } from '@/state/store';
 
+/**
+ * Palette colors as smooth THREE.Color objects.
+ * Rebuilds only when paletteId changes, which is intentional — scenes further
+ * lerp their internal uniform colors toward these targets for a smooth swap.
+ */
 export function usePaletteColors() {
   const paletteId = useStore((s) => s.paletteId);
   return useMemo(() => {
@@ -13,4 +18,9 @@ export function usePaletteColors() {
       glow: new THREE.Color(...p.glow),
     };
   }, [paletteId]);
+}
+
+/** Presence (0..1) for a specific scene id. */
+export function useScenePresence(id: SceneId) {
+  return useStore((s) => s.presence[id] ?? 0);
 }

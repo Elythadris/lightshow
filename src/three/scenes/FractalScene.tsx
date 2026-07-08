@@ -3,13 +3,13 @@ import * as THREE from 'three';
 import { useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useStore } from '@/state/store';
-import { usePaletteColors } from '../hooks';
+import { usePaletteColors, useScenePresence } from '../hooks';
 
 /**
  * FractalScene
- * A raymarched fractal (mandelbulb-like folding) rendered as a
- * fullscreen shader quad. Iteration count, palette, and animation
- * speed adapt to the audio spectrum.
+ * Raymarched folded-box fractal painted onto a background NDC quad, gated by
+ * presence so it fades in during the "Cosmos" chapter and layers with the
+ * other worlds. Iteration count and rotation are driven by the audio spectrum.
  */
 export function FractalScene() {
   const audio = useStore((s) => s.audio);
@@ -17,10 +17,14 @@ export function FractalScene() {
   const cameraMotion = useStore((s) => s.cameraMotion);
   const density = useStore((s) => s.density);
   const palette = usePaletteColors();
+  const presence = useScenePresence('fractal');
   const { size } = useThree();
 
   const mat = useMemo(() => {
     return new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
       uniforms: {
         uTime: { value: 0 },
         uResolution: { value: new THREE.Vector2(1, 1) },
@@ -31,6 +35,7 @@ export function FractalScene() {
         uBeat: { value: 0 },
         uMood: { value: 0.4 },
         uIntensity: { value: 0.7 },
+        uPresence: { value: 0 },
         uCam: { value: 0.5 },
         uSteps: { value: 60 },
         uBase: { value: new THREE.Color(0.1, 0.5, 1.0) },
@@ -46,14 +51,13 @@ export function FractalScene() {
         varying vec2 vUv;
         uniform float uTime;
         uniform vec2 uResolution;
-        uniform float uBass, uMid, uTreble, uEnergy, uBeat, uMood, uIntensity, uCam;
+        uniform float uBass, uMid, uTreble, uEnergy, uBeat, uMood, uIntensity, uCam, uPresence;
         uniform int uSteps;
         uniform vec3 uBase, uAccent, uGlow;
 
-        // Folded box fractal — inspired by kaleidoscopic IFS
         float fractalDE(vec3 p){
-          float scale = 2.0 + uMood * 0.7 + uBass * 0.4;
-          float minRad2 = 0.20 + uTreble * 0.10;
+          float scale = 2.0 + uMood * 0.8 + uBass * 0.5;
+          float minRad2 = 0.20 + uTreble * 0.12;
           vec3 c = p;
           float dr = 1.0;
           float r = 0.0;
@@ -70,7 +74,6 @@ export function FractalScene() {
           return 0.5 * len / dr;
         }
 
-        // Returns (hitT, iterCount, minDist)
         vec3 raymarch(vec3 ro, vec3 rd){
           float t = 0.02;
           float minD = 1e10;
@@ -102,8 +105,8 @@ export function FractalScene() {
           vec2 uv = (vUv * 2.0 - 1.0);
           uv.x *= uResolution.x / uResolution.y;
           float camMove = 0.4 + uCam * 1.4;
-          float a = uTime * 0.06 * camMove;
-          float rad = 2.6 + sin(uTime * 0.13) * 0.35;
+          float a = uTime * 0.06 * camMove + uPresence * 0.4;
+          float rad = 2.6 + sin(uTime * 0.13) * 0.35 + (1.0 - uPresence) * 0.4;
           vec3 ro = vec3(sin(a) * rad, sin(uTime * 0.08) * 0.6, cos(a) * rad);
           vec3 fwd = normalize(-ro);
           vec3 right = normalize(cross(vec3(0.0,1.0,0.0), fwd));
@@ -114,7 +117,6 @@ export function FractalScene() {
           vec3 hit = raymarch(ro, rd);
           float t = hit.x; float steps = hit.y; float minD = hit.z;
           vec3 col = vec3(0.0);
-          // orbital glow — brighter where ray got close to surface
           float glow = exp(-minD * (22.0 - uBeat * 8.0));
           float ao = clamp(1.0 - steps / float(uSteps), 0.0, 1.0);
           if (t > 0.0){
@@ -129,19 +131,15 @@ export function FractalScene() {
             col = c * (0.25 + diff * 0.85) * (0.6 + ao * 0.6);
             col += uGlow * rim * (0.4 + uBeat * 0.8);
           } else {
-            // miss — subtle background gradient
             float bg = smoothstep(1.4, 0.0, length(uv));
             col = mix(vec3(0.01,0.015,0.03), uBase * 0.35, bg);
           }
-          // additive orbit glow always
           col += mix(uBase, uGlow, uTreble * 0.7) * glow * (0.25 + uEnergy * 0.9);
           col *= uIntensity;
-          // filmic-ish
           col = col / (1.0 + col * 0.55);
-          // vignette
           float v = smoothstep(1.55, 0.55, length(uv));
           col *= 0.6 + v * 0.55;
-          gl_FragColor = vec4(col, 1.0);
+          gl_FragColor = vec4(col, uPresence);
         }
       `,
     });
@@ -149,7 +147,7 @@ export function FractalScene() {
 
   const meshRef = useRef<THREE.Mesh>(null);
 
-  useFrame((state, dt) => {
+  useFrame((state) => {
     mat.uniforms.uTime.value = state.clock.elapsedTime;
     mat.uniforms.uResolution.value.set(size.width, size.height);
     mat.uniforms.uBass.value = audio.bass;
@@ -159,16 +157,18 @@ export function FractalScene() {
     mat.uniforms.uBeat.value = audio.beat;
     mat.uniforms.uMood.value = audio.mood;
     mat.uniforms.uIntensity.value = 0.55 + intensity * 0.7;
+    mat.uniforms.uPresence.value = presence;
     mat.uniforms.uCam.value = cameraMotion;
-    mat.uniforms.uSteps.value = Math.floor(48 + density * 40);
-    mat.uniforms.uBase.value.copy(palette.base);
-    mat.uniforms.uAccent.value.copy(palette.accent);
-    mat.uniforms.uGlow.value.copy(palette.glow);
+    // Fewer steps when the fractal is fading in/out (cheap performance win).
+    mat.uniforms.uSteps.value = Math.floor(38 + density * 44 * presence);
+    (mat.uniforms.uBase.value as THREE.Color).lerp(palette.base, 0.06);
+    (mat.uniforms.uAccent.value as THREE.Color).lerp(palette.accent, 0.06);
+    (mat.uniforms.uGlow.value as THREE.Color).lerp(palette.glow, 0.06);
+    if (meshRef.current) meshRef.current.visible = presence > 0.02;
   });
 
   return (
-    // Fullscreen quad; rendered with no camera dependency (clip-space vertices).
-    <mesh ref={meshRef} frustumCulled={false} material={mat}>
+    <mesh ref={meshRef} frustumCulled={false} material={mat} renderOrder={-50}>
       <planeGeometry args={[2, 2]} />
     </mesh>
   );

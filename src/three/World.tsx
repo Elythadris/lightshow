@@ -3,7 +3,6 @@ import { Canvas } from '@react-three/fiber';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import { KernelSize } from 'postprocessing';
 import * as THREE from 'three';
-import { AnimatePresence } from 'framer-motion';
 import { Suspense, useEffect } from 'react';
 import { useStore } from '@/state/store';
 import { NebulaScene } from './scenes/NebulaScene';
@@ -12,21 +11,27 @@ import { FractalScene } from './scenes/FractalScene';
 import { HologridScene } from './scenes/HologridScene';
 import { AuroraScene } from './scenes/AuroraScene';
 import { CameraRig } from './CameraRig';
+import { JourneyDirector } from './JourneyDirector';
 
+/**
+ * World
+ *
+ * A single 3D stage where every scene renders simultaneously. Their per-scene
+ * presence (0..1) controls opacity/emission/scale, so the JourneyDirector can
+ * cross-fade them as the journey progresses.
+ */
 export function World() {
-  const scene = useStore((s) => s.scene);
   const bloom = useStore((s) => s.bloom);
   const performanceMode = useStore((s) => s.performanceMode);
+  const audio = useStore((s) => s.audio);
   const setFps = useStore((s) => s.set);
 
-  // Light DPR based on performance mode. Auto = 1.5, high = 2, low = 1.
   const dpr: [number, number] =
     performanceMode === 'low' ? [0.8, 1] :
     performanceMode === 'balanced' ? [1, 1.25] :
     performanceMode === 'high' ? [1, 2] : [1, 1.6];
 
   useEffect(() => {
-    // Simple FPS meter
     let raf = 0;
     let last = performance.now();
     let frames = 0;
@@ -54,41 +59,35 @@ export function World() {
         stencil: false,
         depth: true,
       }}
-      camera={{ position: [0, 0, 12], fov: 60, near: 0.1, far: 200 }}
+      camera={{ position: [0, 0, 14], fov: 60, near: 0.1, far: 500 }}
       onCreated={({ gl }) => {
         gl.setClearColor(0x000005, 1);
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 0.85;
+        gl.toneMappingExposure = 0.9;
         gl.outputColorSpace = THREE.SRGBColorSpace;
       }}
     >
       <color attach="background" args={[0x000005]} />
       <Suspense fallback={null}>
+        <JourneyDirector />
         <CameraRig />
-        <AnimatePresence mode="wait">
-          {scene === 'nebula'   && <SceneWrap key="nebula"><NebulaScene /></SceneWrap>}
-          {scene === 'ribbons'  && <SceneWrap key="ribbons"><RibbonsScene /></SceneWrap>}
-          {scene === 'fractal'  && <SceneWrap key="fractal"><FractalScene /></SceneWrap>}
-          {scene === 'hologrid' && <SceneWrap key="hologrid"><HologridScene /></SceneWrap>}
-          {scene === 'aurora'   && <SceneWrap key="aurora"><AuroraScene /></SceneWrap>}
-        </AnimatePresence>
+        {/* All scenes render at once; presence gates their opacity/scale/emission. */}
+        <AuroraScene />
+        <NebulaScene />
+        <HologridScene />
+        <RibbonsScene />
+        <FractalScene />
         <EffectComposer multisampling={0}>
           <Bloom
-            intensity={0.22 + bloom * 0.55}
-            luminanceThreshold={0.62}
-            luminanceSmoothing={0.28}
+            intensity={0.24 + bloom * 0.6 + audio.beat * 0.18}
+            luminanceThreshold={0.58 - audio.energy * 0.1}
+            luminanceSmoothing={0.3}
             mipmapBlur
             kernelSize={KernelSize.LARGE}
           />
-          <Vignette eskil={false} offset={0.2} darkness={0.85} />
+          <Vignette eskil={false} offset={0.22} darkness={0.86} />
         </EffectComposer>
       </Suspense>
     </Canvas>
   );
-}
-
-function SceneWrap({ children }: { children: React.ReactNode }) {
-  // <group> can't be animated with framer-motion in R3F v8 the same way
-  // so we simply mount/unmount; AnimatePresence handles a 2D overlay fade.
-  return <group>{children}</group>;
 }

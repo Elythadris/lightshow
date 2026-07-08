@@ -4,34 +4,56 @@ import { useState } from 'react';
 import { getAudioEngine } from '@/audio/AudioEngine';
 import { useStore } from '@/state/store';
 
+type EntryMode = 'tab' | 'mic' | 'ambient';
+
 /**
  * Intro
  * Cinematic entry gate. Also serves as the required user gesture to
  * unlock the AudioContext on most browsers.
  */
 export function Intro({ onEnter }: { onEnter: () => void }) {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<EntryMode | null>(null);
   const setStore = useStore((s) => s.set);
 
-  async function enter(withMic: boolean) {
+  async function enter(mode: EntryMode) {
     if (busy) return;
-    setBusy(true);
+    setBusy(mode);
     const engine = getAudioEngine();
-    if (withMic) {
-      try {
-        await engine.initMic();
-        setStore('useMic', true);
-        setStore('usingAudio', true);
-      } catch {
+    try {
+      if (mode === 'tab') {
+        try {
+          await engine.initTab();
+          setStore('useTab', true);
+          setStore('useMic', false);
+          setStore('usingAudio', true);
+          setStore('audioSourceLabel', 'Tab');
+        } catch {
+          await engine.initSimulated();
+          setStore('useTab', false);
+          setStore('usingAudio', false);
+          setStore('audioSourceLabel', 'Ambient');
+        }
+      } else if (mode === 'mic') {
+        try {
+          await engine.initMic();
+          setStore('useMic', true);
+          setStore('useTab', false);
+          setStore('usingAudio', true);
+          setStore('audioSourceLabel', 'Mic');
+        } catch {
+          await engine.initSimulated();
+          setStore('useMic', false);
+          setStore('usingAudio', false);
+          setStore('audioSourceLabel', 'Ambient');
+        }
+      } else {
         await engine.initSimulated();
-        setStore('useMic', false);
         setStore('usingAudio', false);
+        setStore('audioSourceLabel', 'Ambient');
       }
-    } else {
-      await engine.initSimulated();
-      setStore('usingAudio', false);
+    } finally {
+      onEnter();
     }
-    onEnter();
   }
 
   return (
@@ -84,30 +106,49 @@ export function Intro({ onEnter }: { onEnter: () => void }) {
           transition={{ duration: 1, delay: 0.9 }}
           className="mt-3 text-white/60 text-sm md:text-base tracking-wide"
         >
-          A living world of light that listens.
+          A six-movement journey of light that listens.
           <br className="hidden sm:block" />
-          Move your mouse. Play music. Let it breathe.
+          Share the tab playing your music. Let it breathe.
         </motion.p>
 
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 1.4 }}
-          className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3"
+          className="mt-10 flex flex-col items-center justify-center gap-3"
         >
-          <button className="btn primary" onClick={() => enter(true)} disabled={busy}>
-            Enter with Microphone
+          <button
+            className="btn primary w-full sm:w-auto min-w-[260px]"
+            onClick={() => enter('tab')}
+            disabled={!!busy}
+          >
+            {busy === 'tab' ? 'Requesting…' : 'Share a Browser Tab (recommended)'}
           </button>
-          <button className="btn" onClick={() => enter(false)} disabled={busy}>
-            Enter (ambient)
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button className="btn" onClick={() => enter('mic')} disabled={!!busy}>
+              {busy === 'mic' ? 'Requesting…' : 'Use Microphone'}
+            </button>
+            <button className="btn" onClick={() => enter('ambient')} disabled={!!busy}>
+              {busy === 'ambient' ? 'Loading…' : 'Enter (ambient)'}
+            </button>
+          </div>
         </motion.div>
 
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 1, delay: 1.9 }}
-          className="mt-8 text-[11px] text-white/35 tracking-[0.2em] uppercase"
+          className="mt-6 text-[11px] text-white/40 tracking-wide leading-relaxed max-w-md mx-auto"
+        >
+          Tab sharing lets Lightshow hear music from another browser tab (YouTube, Spotify Web, etc.).
+          In the browser prompt, pick the tab playing music and <span className="text-white/70">keep "Share tab audio" enabled</span>.
+        </motion.p>
+
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1, delay: 2.2 }}
+          className="mt-6 text-[11px] text-white/35 tracking-[0.2em] uppercase"
         >
           Best experienced full-screen · WebGL required
         </motion.p>
